@@ -531,18 +531,6 @@ eliminationSolveHelper = (
     );
 
 
-    --------------------------------------------------------
-    -- Zero-dimensionality
-    --------------------------------------------------------
-
-    if not isZeroDimensionalSystem I then (
-
-        if verbose then
-            print "System is not zero-dimensional.";
-
-        return {};
-    );
-
 
    --------------------------------------------------------
 -- Find a coefficient-splitting candidate first
@@ -803,8 +791,16 @@ eliminationSolve(
 
 
     --------------------------------------------------------
-    -- Zero-dimensionality
-    --------------------------------------------------------
+-- Zero-dimensionality
+--------------------------------------------------------
+
+G := gb I;
+polys := flatten entries gens G;
+
+if not any(
+    polys,
+    f -> f == 1
+) then (
 
     if not isZeroDimensionalSystem I then (
 
@@ -815,7 +811,7 @@ eliminationSolve(
 
         return {};
     );
-
+);
 
     --------------------------------------------------------
     -- Header
