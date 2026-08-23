@@ -1292,4 +1292,40 @@ TEST ///
 ///
 
 
+TEST ///
+    -- Minimal forced-splitting test.
+
+    R = QQ[x,y,MonomialOrder => Lex];
+
+    I = ideal(
+        x^2,
+        x*y + x,
+        y^2 - 1
+    );
+
+    sols = eliminationSolve(
+        I,
+        {x,y},
+        Verbose => false
+    );
+
+    assert(
+    #sols == 2
+);
+
+assert(
+    all(
+        sols,
+        sol -> (
+            abs(sol#0^2) < 1e-6
+            and
+            abs(sol#0 * sol#1 + sol#0) < 1e-6
+            and
+            abs(sol#1^2 - 1) < 1e-6
+        )
+    )
+);
+///
+
+
 end
