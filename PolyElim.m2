@@ -30,7 +30,7 @@ export {
     "eliminationSolve",
     "isZeroDimensionalSystem",
     "MaxSplitDepth",
-    "Tolerance"
+    "Tolerance",
 }
 
 
@@ -95,7 +95,7 @@ isZeroDimensionalSystem Ideal := I -> (
 ------------------------------------------------------------
 
 isConstantPolynomial = f -> (
-    #support f == 0
+    isConstant f
 )
 
 
@@ -451,32 +451,33 @@ findSplitCandidate = (polys,vrs) -> (
 
             if member(x,support f) then (
 
-                d := degree(x,f);
+                tc := topCoefficients f;
 
-                if d > 0 then (
+                if #tc == 2 then (
 
-                    c := coefficient(
-                        x^d,
-                        f
-                    );
+                    xTop := tc#0;
+                    c := tc#1;
 
-                    if not isConstantPolynomial c then (
+                    if xTop === x then (
 
-                        laterVars := set {};
+                        if not isConstantPolynomial c then (
 
-                        if i+1 <= n-1 then
-                            laterVars = set apply(
-                                i+1..(n-1),
-                                j -> vrs#j
-                            );
+                            laterVars := set {};
 
-                        suppc := support c;
+                            if i+1 <= n-1 then
+                                laterVars = set apply(
+                                    i+1..(n-1),
+                                    j -> vrs#j
+                                );
 
-                        if all(
-                            suppc,
-                            z -> member(z,laterVars)
-                        ) then
-                            return (x,c);
+                            suppc := support c;
+
+                            if all(
+                                suppc,
+                                z -> member(z,laterVars)
+                            ) then
+                                return (x,c);
+                        );
                     );
                 );
             );
@@ -485,8 +486,7 @@ findSplitCandidate = (polys,vrs) -> (
 
     null
 )
-
-
+    
 ------------------------------------------------------------
 -- Recursive elimination and splitting
 ------------------------------------------------------------
@@ -531,68 +531,126 @@ eliminationSolveHelper = (
     );
 
 
-    --------------------------------------------------------
-    -- Zero-dimensionality
-    --------------------------------------------------------
 
-    if not isZeroDimensionalSystem I then (
+   --------------------------------------------------------
+-- Find a coefficient-splitting candidate first
+--------------------------------------------------------
 
-        if verbose then
-            print "System is not zero-dimensional.";
+cand := findSplitCandidate(
+    polys,
+    vrs
+);
 
-        return {};
+
+--------------------------------------------------------
+-- Adaptive recursive splitting
+--------------------------------------------------------
+
+if cand =!= null and depth < maxDepth then (
+
+    (x,g) := cand;
+
+    if verbose then (
+        print "";
+        print "Splitting candidate:";
+        print g;
+
+        print "";
+        print (
+            "Variable: "
+            | toString x
+        );
     );
 
 
-    --------------------------------------------------------
-    -- First attempt triangular solving
-    --------------------------------------------------------
+    ----------------------------------------------------
+    -- Branch A: g = 0
+    ----------------------------------------------------
 
-    result := triangularSolve(
-        I,
+    if verbose then (
+        print "";
+        print "Branch A: g = 0";
+    );
+
+    IA := trim(
+        I + ideal(g)
+    );
+
+    solA := eliminationSolveHelper(
+        IA,
         vrs,
+        depth + 1,
+        maxDepth,
+        tol,
+        verbose
+    );
+
+
+    ----------------------------------------------------
+    -- Branch B: g != 0
+    ----------------------------------------------------
+
+    if verbose then (
+        print "";
+        print "Branch B: g != 0";
+    );
+
+    IB := saturate(
+        I,
+        g,
+        Strategy => Eliminate
+    );
+
+    solB := eliminationSolveHelper(
+        IB,
+        vrs,
+        depth + 1,
+        maxDepth,
+        tol,
+        verbose
+    );
+
+
+    ----------------------------------------------------
+    -- Combine both branches
+    ----------------------------------------------------
+
+    return uniqueNumericalSolutions(
+        solA | solB,
         tol
     );
-
-    if result =!= null then (
-
-        if verbose then
-            print "Triangular system solved.";
-
-        return result;
-    );
+);
 
 
-    --------------------------------------------------------
-    -- Stop if maximum splitting depth is reached
-    --------------------------------------------------------
+--------------------------------------------------------
+-- No useful split:
+-- attempt triangular solving
+--------------------------------------------------------
 
-    if depth >= maxDepth then (
+result := triangularSolve(
+    I,
+    vrs,
+    tol
+);
 
-        if verbose then
-            print "Maximum splitting depth reached.";
+if result =!= null then (
 
-        return {};
-    );
+    if verbose then
+        print "Triangular system solved.";
+
+    return result;
+);
 
 
-    --------------------------------------------------------
-    -- Find splitting coefficient
-    --------------------------------------------------------
+--------------------------------------------------------
+-- No split and triangular solving failed
+--------------------------------------------------------
 
-    cand := findSplitCandidate(
-        polys,
-        vrs
-    );
+if verbose then
+    print "No splitting candidate and triangular solving failed.";
 
-    if cand === null then (
-
-        if verbose then
-            print "No suitable splitting coefficient found.";
-
-        return {};
-    );
-
+return {};
+       
 
     (x,g) := cand;
 
@@ -733,8 +791,16 @@ eliminationSolve(
 
 
     --------------------------------------------------------
-    -- Zero-dimensionality
-    --------------------------------------------------------
+-- Zero-dimensionality
+--------------------------------------------------------
+
+G := gb I;
+polys := flatten entries gens G;
+
+if not any(
+    polys,
+    f -> f == 1
+) then (
 
     if not isZeroDimensionalSystem I then (
 
@@ -745,7 +811,7 @@ eliminationSolve(
 
         return {};
     );
-
+);
 
     --------------------------------------------------------
     -- Header
@@ -986,7 +1052,12 @@ doc ///
             The default value is true.
 ///
 
+------------------------------------------------------------
+-- TEMPORARY INTERNAL TEST
+-- Tests the recursive splitting machinery directly.
+------------------------------------------------------------
 
+    
 ------------------------------------------------------------
 -- Tests
 ------------------------------------------------------------
@@ -1218,6 +1289,42 @@ TEST ///
             )
         )
     );
+///
+
+
+TEST ///
+    -- Minimal forced-splitting test.
+
+    R = QQ[x,y,MonomialOrder => Lex];
+
+    I = ideal(
+        x^2,
+        x*y + x,
+        y^2 - 1
+    );
+
+    sols = eliminationSolve(
+        I,
+        {x,y},
+        Verbose => false
+    );
+
+    assert(
+    #sols == 2
+);
+
+assert(
+    all(
+        sols,
+        sol -> (
+            abs(sol#0^2) < 1e-6
+            and
+            abs(sol#0 * sol#1 + sol#0) < 1e-6
+            and
+            abs(sol#1^2 - 1) < 1e-6
+        )
+    )
+);
 ///
 
 
